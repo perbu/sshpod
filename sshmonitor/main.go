@@ -36,7 +36,19 @@ func Connect(ctx context.Context, signer ssh.Signer, username, target string, lo
 		signer: signer,
 		ports:  ports,
 	}
-	m.connect(ctx, target, username)
+	for ctx.Err() == nil {
+		m.connect(ctx, target, username)
+		ctxSleep(ctx, time.Second*5)
+	}
+}
+
+func ctxSleep(ctx context.Context, duration time.Duration) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(duration):
+		return
+	}
 }
 
 // connect sshs into a host (with the Signer) and registers two remote ports.
@@ -52,6 +64,7 @@ func (m monitor) connect(ctx context.Context, target, username string) {
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 	}
 	// Connect to SSH remote server using serverEndpoint
+	m.logger.Debugf("Connecting to %s", target)
 	sshClient, err := gossh.Dial("tcp", target, sshConfig)
 	if err != nil {
 		m.logger.Errorf("Dial remote (%s) error: %s", target, err)

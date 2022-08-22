@@ -8,6 +8,7 @@ import (
 	"github.com/perbu/sshpod/httpd"
 	"github.com/perbu/sshpod/sshd"
 	"github.com/perbu/sshpod/sshkeys"
+	"github.com/perbu/sshpod/sshmonitor"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -38,6 +39,8 @@ func realMain() error {
 	privCertPath := getEnvString("PRIV_CERT_PATH", "", true)
 	pubKeyPath := getEnvString("PUB_KEY_PATH", "", true)
 	sshPort := getEnvInt("SSHD_PORT", 0, false)
+	target := getEnvString("TARGET", "", true)
+	targetUsername := getEnvString("TARGET_USERNAME", "", true)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -82,9 +85,17 @@ func realMain() error {
 		sshServer.Run(ctx)
 	}()
 
-	// monitorSigner :=
 	// Set up the SSH monitor
+	// we're gonna re-use the signer that we use for the sshd server, to keep the number of keys low.
 	// sshMonitor := sshmonitor.Connect(ctx, )
+	monitorLogger := log.MakeLogger("sshmonitor")
+	monitorLogger.SetLevel(log.TraceLevel)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		logger.Info("Starting SSH monitor")
+		sshmonitor.Connect(ctx, signer, targetUsername, target, monitorLogger, httpServer.Port(), sshServer.Port())
+	}()
 
 	logger.Info("Services up and running. Waiting for interrupt...")
 	wg.Wait()

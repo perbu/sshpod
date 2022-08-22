@@ -52,7 +52,7 @@ func New(signer ssh.Signer, key ssh.PublicKey, routerId, port int, logger log.Lo
 
 	app.server = &ssh.Server{
 		PublicKeyHandler:         app.myPubKeyHandler,
-		ConnectionFailedCallback: nil,
+		ConnectionFailedCallback: app.connectionFailedCallback,
 		Handler:                  app.sshHandler,
 		HostSigners:              []ssh.Signer{signer},
 	}
@@ -145,25 +145,33 @@ func handleTerminalInput(line string) (string, error) {
 	}
 }
 
-func (a Server) checkPubKey(key ssh.PublicKey) bool {
+func (a Server) checkPubKey(sshctx ssh.Context, key ssh.PublicKey) bool {
 	result := ssh.KeysEqual(key, a.pubKey)
 	a.logger.Debugf("checkPubKey result: %v", result)
 	return result
 }
 
-func (a Server) checkCert(cert ssh.PublicKey) bool {
-	panic("confused")
+func (a Server) checkCert(sshctx ssh.Context, cert *gossh.Certificate) bool {
+	a.logger.Debugf("checkCert with type %s", cert.Type())
+	wctx := &gContextWrapper{sshctx}
+	_, err := a.check.Authenticate(wctx, cert)
+	if err != nil {
+		a.logger.Debugf("checkCert disallowing cert: %s, type %s, err: %s", cert.KeyId, cert.Type(), err)
+		return false
+	}
+	a.logger.Debugf("checkCert allowing cert: %s, type %s", cert.KeyId, cert.Type())
+	return true
 }
 
-func (a Server) myPubKeyHandler(ctx ssh.Context, key ssh.PublicKey) bool {
-	a.logger.Debug("myPubKeyHandler")
+func (a Server) myPubKeyHandler(sshctx ssh.Context, key ssh.PublicKey) bool {
+	a.logger.Debugf("myPubKeyHandler with type: %s (gotype: %T)", key.Type(), key)
 	cert, ok := key.(*gossh.Certificate)
 	if !ok {
 		a.logger.Debug("myPubKeyHandler: not a cert")
-		return a.checkPubKey(key)
+		return a.checkPubKey(sshctx, key)
 	} else {
 		a.logger.Debug("myPubKeyHandler: is a cert")
-		return a.checkCert(cert)
+		return a.checkCert(sshctx, cert)
 	}
 }
 
@@ -188,4 +196,8 @@ func (a Server) userAuthorityChecker(signedWith gossh.PublicKey) bool {
 		return false
 	}
 
+}
+
+func (app Server) connectionFailedCallback(conn net.Conn, err error) {
+	app.logger.Warn("Connection failed: %s", err)
 }

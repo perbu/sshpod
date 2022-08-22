@@ -1,0 +1,4 @@
+.idea
+/rsa2k*
+/.env
+/.authorized_keys
